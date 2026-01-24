@@ -434,10 +434,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	// Get API key from environment or use default
+	// Get API key from environment (required)
 	apiKey := os.Getenv("COINGECKO_API_KEY")
 	if apiKey == "" {
-		apiKey = "***REDACTED***"
+		log.Fatal("COINGECKO_API_KEY environment variable is required")
 	}
 
 	// Get port from environment or use default
