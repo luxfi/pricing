@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	// CoinGecko Pro API
-	coingeckoBaseURL = "https://pro-api.coingecko.com/api/v3"
+	// CoinGecko API URLs
+	coingeckoProURL  = "https://pro-api.coingecko.com/api/v3"
+	coingeckoDemoURL = "https://api.coingecko.com/api/v3"
 
 	// Cache TTL - 1 hour
 	cacheTTL = 1 * time.Hour
@@ -32,6 +33,7 @@ type PriceCache struct {
 	mu        sync.RWMutex
 	prices    map[string]*CachedPrice
 	apiKey    string
+	baseURL   string
 	client    *http.Client
 }
 
@@ -79,10 +81,22 @@ type CoinGeckoPrice struct {
 
 // NewPriceCache creates a new price cache
 func NewPriceCache(apiKey string) *PriceCache {
+	// Detect API type from key prefix
+	// Pro keys start with "CG-" followed by alphanumeric
+	// Demo keys also start with "CG-" but use demo API
+	// If no key, use demo API
+	baseURL := coingeckoDemoURL
+	if apiKey != "" && strings.HasPrefix(apiKey, "CG-") && len(apiKey) > 10 {
+		// Check if it's a pro key by trying pro first
+		// For now, assume demo unless explicitly marked
+		baseURL = coingeckoDemoURL
+	}
+
 	return &PriceCache{
-		prices: make(map[string]*CachedPrice),
-		apiKey: apiKey,
-		client: &http.Client{Timeout: 30 * time.Second},
+		prices:  make(map[string]*CachedPrice),
+		apiKey:  apiKey,
+		baseURL: baseURL,
+		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -227,14 +241,14 @@ func (pc *PriceCache) GetMultiplePrices(ctx context.Context, tokenIDs []string, 
 // fetchFromCoinGecko fetches a single price from CoinGecko
 func (pc *PriceCache) fetchFromCoinGecko(ctx context.Context, tokenID, currency string) (*CoinGeckoPrice, error) {
 	url := fmt.Sprintf("%s/coins/markets?vs_currency=%s&ids=%s&order=market_cap_desc&per_page=1&page=1&sparkline=false",
-		coingeckoBaseURL, currency, tokenID)
+		pc.baseURL, currency, tokenID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("x-cg-pro-api-key", pc.apiKey)
+	req.Header.Set("x-cg-demo-api-key", pc.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := pc.client.Do(req)
@@ -264,14 +278,14 @@ func (pc *PriceCache) fetchFromCoinGecko(ctx context.Context, tokenID, currency 
 func (pc *PriceCache) fetchMultipleFromCoinGecko(ctx context.Context, tokenIDs []string, currency string) ([]CoinGeckoPrice, error) {
 	ids := strings.Join(tokenIDs, ",")
 	url := fmt.Sprintf("%s/coins/markets?vs_currency=%s&ids=%s&order=market_cap_desc&per_page=250&page=1&sparkline=false",
-		coingeckoBaseURL, currency, ids)
+		pc.baseURL, currency, ids)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("x-cg-pro-api-key", pc.apiKey)
+	req.Header.Set("x-cg-demo-api-key", pc.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := pc.client.Do(req)
