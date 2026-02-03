@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: markets
+  namespace: lux-gateway
+  labels:
+    app: markets
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: markets
+  template:
+    metadata:
+      labels:
+        app: markets
+    spec:
+      containers:
+        - name: markets
+          image: ghcr.io/luxfi/pricing:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: COINGECKO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: markets-secrets
+                  key: coingecko-api-key
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      imagePullSecrets:
+        - name: ghcr-secret

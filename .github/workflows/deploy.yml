@@ -50,19 +50,42 @@ jobs:
     environment: production
 
     steps:
-      - name: Deploy to fx.lux.network
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          host: fx.lux.network
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            docker pull ghcr.io/luxfi/pricing:latest
-            docker stop pricing || true
-            docker rm pricing || true
-            docker run -d \
-              --name pricing \
-              --restart unless-stopped \
-              -p 8080:8080 \
-              -e COINGECKO_API_KEY=${{ secrets.COINGECKO_API_KEY }} \
-              ghcr.io/luxfi/pricing:latest
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save do-sfo3-lux-k8s
+
+      - name: Create/Update secrets
+        run: |
+          kubectl create secret generic markets-secrets \
+            --namespace=lux-gateway \
+            --from-literal=coingecko-api-key=${{ secrets.COINGECKO_API_KEY }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create ghcr pull secret
+        run: |
+          kubectl create secret docker-registry ghcr-secret \
+            --namespace=lux-gateway \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/ingress.yaml
+          kubectl rollout restart deployment/markets -n lux-gateway
+          kubectl rollout status deployment/markets -n lux-gateway --timeout=120s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n lux-gateway -l app=markets
+          kubectl get ingress -n lux-gateway markets
